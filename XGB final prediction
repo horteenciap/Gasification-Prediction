@@ -1,0 +1,200 @@
+### Importing libraries
+
+import pandas as pd
+import numpy as np
+import sklearn
+
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import Lasso
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import scale
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold, GridSearchCV, StratifiedKFold
+import xgboost as xgb
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import GridSearchCV
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.compose import ColumnTransformer
+import optuna
+import catboost as cb
+
+
+# Load dataset (dataset avaliable at: https://github.com/horteenciap/Gasification-Prediction/blob/main/model_data.xlsx)
+
+dataset= pd.read_excel("C:/Users/horte/Desktop/model_data.xlsx",sheet_name="all" )
+pd.set_option("display.precision", 2)
+pd.set_option("display.max_rows", 10)
+pd.set_option("display.max_columns", 26)
+
+data_cat_feat=dataset.loc[:,[ 'bed', 'reactor', 'agent']]
+data_num_feat=dataset.loc[:,['Cel', 'Hem', 'Lig',  'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+data_target=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+X=dataset.loc[:,['bed', 'reactor', 'agent', 'Cel', 'Hem', 'Lig', 'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+y=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+#y=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X,y,
+                                                    test_size =0.2,
+                                                    random_state=123,
+                                                    shuffle=True )
+
+#numeric_features
+numerical_transformer=MinMaxScaler()
+
+#categoric_features
+categoric_transformer=OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+
+#scaling_encoding
+preprocessor = ColumnTransformer(transformers=
+                                [('cat', categoric_transformer, data_cat_feat.columns),
+                                ("num", numerical_transformer,data_num_feat.columns)],
+                                remainder='drop',
+                                n_jobs=-1)
+X_train=pd.DataFrame(preprocessor.fit_transform(X_train),  columns=preprocessor.get_feature_names_out())
+X_train.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_train.columns=X_train.columns.str.replace('num__','', regex=True)
+
+X_test=pd.DataFrame(preprocessor.transform(X_test),  columns=preprocessor.get_feature_names_out())
+X_test.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_test.columns=X_train.columns.str.replace('num__','', regex=True)
+
+def model_eval(y_pred, y_actual, X_test=X_test):
+
+    r2_test=r2_score( y_actual,y_pred,).round(2)
+    mse_test= mean_squared_error( y_actual,y_pred).round(2)
+    rmse_test= mean_squared_error(y_actual,y_pred, squared=False).round(2)
+    r2_adj =1 - (1-r2_test) * (len(y_test) - 1) / (len(y_test) - X_test.shape[1] - 1)
+
+    eval_result = pd.Series([r2_test,rmse_test,mse_test,  r2_adj],
+                        index=['R2', 'RMSE', 'MSE', 'R2 adj'])
+
+    return eval_result
+
+model_eval_df=pd.DataFrame(index=['R2', 'RMSE', 'MSE', 'R2 adj'])
+
+
+
+import joblib
+models=[joblib.load('xgb_final_gas_yield.joblib'),
+        joblib.load('xgb_final_CO.joblib'),
+        joblib.load('xgb_final_CO2.joblib'),
+        joblib.load('xgb_final_H2.joblib'),
+        joblib.load('xgb_final_CH4.joblib'),
+        joblib.load('xgb_final_LHV.joblib')]
+
+vars=['Gas_yield','CO', 'CO2', 'H2', 'CH4',  'LHV']
+
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib import pylab
+from yellowbrick.regressor import PredictionError
+from yellowbrick.style import set_palette, set_style
+from yellowbrick.style.palettes import PALETTES, SEQUENCES, color_palette
+import seaborn as sns
+import shap
+
+
+matplotlib.rcParams.update({'font.size': 8})
+matplotlib.rcParams.update({'font.family': 'Arial'})
+for  model,var in zip(models,vars) :
+
+
+
+
+    #predictions
+    y_actual=np.array(y_test[var])
+    y_pred= np.array(model.predict(X_test))
+
+    max_colors = 4
+    set_palette(["mediumorchid"])
+
+    visualizer = PredictionError(model)
+    visualizer.fit(X_train, y_train[var])
+    visualizer.score(X_test,  y_actual)
+
+    visualizer.finalize()
+    visualizer.ax.set_xlabel(f'Valor estimado ({var})')
+    visualizer.ax.set_ylabel(f'Valor observado ({var})')
+    visualizer.ax.set(title =None)
+    visualizer.ax.grid(False)
+    score=visualizer.score(X_test,  y_actual)
+    score_label="$R^2$"
+    label="{} $ = {:0.3f}$".format(score_label,score)
+    #label2 = "{} $ = {:0.3f}$".format("RMSE", score)
+
+    visualizer.ax.legend(['Dados', 'Melhor ajuste', 'Ajuste ideal'], loc='upper center')
+    a= visualizer.ax.get_xbound()
+    print ()
+    visualizer.ax.text(a[0],a[1]-a[0],label, fontsize=10)
+
+
+
+    plot_name=f'{var}_error_plot.png'
+    #visualizer.show(outpath=plot_name)
+    plt.savefig(plot_name)
+    plt.clf()
+
+    
+    #visualizer = PredictionError(model)
+
+
+    # model metrics
+    model_eval_df[var] = model_eval(y_pred, y_actual)
+
+
+model_eval_df.to_excel('FINAL_PREDICTIONS.xlsx')
+   #feature importance
+    #explainer = shap.TreeExplainer(model)
+    #shap_values = explainer.shap_values(X_test)
+   #shap.summary_plot(shap_values, X_test)
+   # plt.show()
+
+  # feat_importance = model.feature_importances_
+  # plt.barh( X_test.columns, model.feature_importances_, color='darkorchid')
+   #plt.show()
+
+
+    #fg, ax = plt.subplots(figsize=(10, 10))
+
+
+    #ax.scatter(y_actual, y_pred,
+   #            color="dodgerblue", marker="o",)
+    #ax.grid(False)
+    #ax.tick_params(color='black', labelcolor='black')
+  # ax.spines['right'].set_visible(False)
+  # ax.spines['top'].set_visible(False)
+
+  #  if var =='Gas_yield':
+     #  plt.plot([0, 2], [0, 2], "orangered", lw=1)
+     #  plt.xlim(0, 2)
+     #  plt.ylim(0, 2)
+     #  plt.xticks(np.arange(0,2,0.5))
+     #  plt.yticks(np.arange(0, 2, 0.5))
+    #else:
+       #plt.plot([0, 100], [0, 100], "red", lw=1)
+       #plt.xlim(0, 100)
+       #plt.ylim(0, 100)
+      # plt.xticks(np.arange(0,100,20))
+     #  plt.yticks(np.arange(0, 100,20))
+    #plt.xlabel("\nValor observado", fontsize=12, fontweight='bold')
+   # plt.ylabel("Valor estimado\n", fontsize=12,fontweight='bold')
+   #plt.show()
+
+  # plt.show()
+    #
+
+
+
