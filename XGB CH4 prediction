@@ -1,0 +1,168 @@
+import pandas as pd
+import numpy as np
+import sklearn
+
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import Lasso
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import scale
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold, GridSearchCV, StratifiedKFold
+import xgboost as xgb
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import GridSearchCV
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.compose import ColumnTransformer
+import optuna
+import catboost as cb
+dataset= pd.read_excel("C:\\Users\\horte\\Desktop\\Dissertação\\model_data.xlsx",sheet_name="all" )
+pd.set_option("display.precision", 2)
+pd.set_option("display.max_rows", 10)
+pd.set_option("display.max_columns", 26)
+
+data_cat_feat=dataset.loc[:,[ 'bed', 'reactor', 'agent']]
+data_num_feat=dataset.loc[:,['Cel', 'Hem', 'Lig', '%C', 'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+data_target=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+X=dataset.loc[:,['bed', 'reactor', 'agent','%C', 'Cel', 'Hem', 'Lig', 'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+y=dataset.loc[:,['CH4']]
+#y=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X,y,
+                                                    test_size =0.2,
+                                                    random_state=123,
+                                                    shuffle=True )
+
+#numeric_features
+numerical_transformer=MinMaxScaler()
+
+#categoric_features
+categoric_transformer=OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+
+#scaling_encoding
+preprocessor = ColumnTransformer(transformers=
+                                [('cat', categoric_transformer, data_cat_feat.columns),
+                                ("num", numerical_transformer,data_num_feat.columns)],
+                                remainder='drop',
+                                n_jobs=-1)
+X_train=pd.DataFrame(preprocessor.fit_transform(X_train),  columns=preprocessor.get_feature_names_out())
+X_train.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_train.columns=X_train.columns.str.replace('num__','', regex=True)
+
+X_test=pd.DataFrame(preprocessor.transform(X_test),  columns=preprocessor.get_feature_names_out())
+X_test.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_test.columns=X_train.columns.str.replace('num__','', regex=True)
+
+print (X_test.columns)
+print (X_train.columns)
+print (y_train.columns)
+
+X_train.drop(columns=('%C'), inplace=True, axis=1)
+X_test.drop(columns=('%C'), inplace=True, axis=1)
+
+#dataset.drop(columns=('%C'),inplace=True, axis=1)
+#dataset.drop(columns=('MC'),inplace=True, axis=1)
+#dataset.drop(columns=('Ash'),inplace=True, axis=1)
+#dataset.drop(columns=('PS'),inplace=True, axis=1)
+#dataset.drop(columns=('ER'),inplace=True, axis=1)
+
+
+#'%C', 'MC', 'Ash', 'PS'
+
+
+#data xgb matrix--------------------------------------------------------------------------
+dtrain=xgb.DMatrix(X_train,label=y_train,  enable_categorical=True)
+dtest=xgb.DMatrix(X_test,label= y_test, enable_categorical=True)
+
+
+def model_cv(model,X_train, y_train=y_train):
+    cv = cross_validate(model, X=X_train, y=y_train,
+                            cv=KFold(n_splits=10, shuffle=True, random_state=123),
+                            scoring=('r2', 'neg_mean_squared_error', 'neg_root_mean_squared_error'),
+                            return_train_score=True,
+                            n_jobs=-1)
+    cv_results = pd.DataFrame(cv)
+    r2_cv_test,r2_cv_train= cv_results['test_r2'].mean().round(2), cv_results['train_r2'].mean().round(2)
+    rmse_cv_test = abs(cv_results['test_neg_root_mean_squared_error'].mean().round(2))
+    rmse_cv_train =  abs(cv_results['train_neg_root_mean_squared_error'].mean().round(2))
+    mse_cv_test = abs(cv_results['test_neg_mean_squared_error'].mean().round(2))
+    mse_cv_train = abs(cv_results['train_neg_mean_squared_error'].mean().round(2))
+
+    cv_mean = pd.Series([r2_cv_test,r2_cv_train, rmse_cv_test, rmse_cv_train, mse_cv_test, mse_cv_train],
+                        index=['r2_cv_test','r2_cv_train','rmse_cv_test', 'rmse_cv_train', 'mse_cv_test', 'mse_cv_train'])
+
+    return cv_mean
+
+def model_eval(y_pred_test, y_pred_train,X_test, y_train=y_train,y_test=y_test):
+
+    r2_test=round(r2_score(y_test, y_pred_test ),2)
+    r2_train = round(r2_score(y_train, y_pred_train ),2)
+    mse_test= round(mean_squared_error( y_test, y_pred_test),2)
+    mse_train = round(mean_squared_error(y_train, y_pred_train),2)
+    rmse_test= round(mean_squared_error(y_test, y_pred_test, squared=False),2)
+    rmse_train= round(mean_squared_error(y_train, y_pred_train, squared=False),2)
+    r2_adj =1 - (1-r2_test) * (len(y_test) - 1) / (len(y_test) - X_test.shape[1] - 1)
+
+    eval_result = pd.Series([r2_test, r2_train, rmse_test, rmse_train, mse_test, mse_train, r2_adj],
+                        index=['r2_test', 'r2_train', 'rmse_test', 'rmse_train', 'mse_test',
+                               'mse_train', 'r2_adj'])
+
+    return eval_result
+
+cv_metrics= pd.DataFrame(index=['r2_cv_test','r2_cv_train','rmse_cv_test', 'rmse_cv_train', 'mse_cv_test', 'mse_cv_train'])
+model_eval_df=pd.DataFrame(index=['r2_test', 'r2_train', 'rmse_test', 'rmse_train', 'mse_test',
+                               'mse_train', 'r2_adj'])
+
+#________________________________XGB_____________________________________________________
+params={'objective': 'reg:squarederror',
+        'colsample_bytree': 0.4,
+        'gamma': 0.0007782460448109812,
+        'learning_rate': 0.25,
+        'max_depth': 5,
+        'min_child_weight': 1,
+        'n_estimators': 300, 'n_jobs': -1,
+        'random_state': 222,
+        'subsample': 0.75,
+        'lambda': 0.8228384212077653, 'alpha': 0.4239886180197741}
+#XGB_baseline ALL features  = xgb_1
+
+xgb_final_gas=xgb.XGBRegressor(**params)
+cv_metrics['xgb_final_CH4']=model_cv(xgb_final_gas, X_train)
+xgb_final_gas.set_params(early_stopping_rounds=50)
+
+xgb_final_gas.fit(X_train,y_train,eval_set=[(X_test,y_test),(X_train,y_train)], verbose=False)
+y_pred_test_xgb_1=xgb_final_gas.predict(X_test)
+y_pred_train_xgb_1=xgb_final_gas.predict(X_train)
+
+results=xgb_final_gas.evals_result()
+print (results)
+model_eval_df['xgb_final_CH4']=model_eval(y_pred_test_xgb_1, y_pred_train_xgb_1,X_test)
+
+
+epochs = len(results['validation_0']['rmse'])
+print ('epochs:', epochs)
+plt.plot(results['validation_0']['rmse'], label='test')
+plt.plot(results['validation_1']['rmse'], label='train')
+plt.legend()
+plt.show()
+
+print (cv_metrics)
+print (model_eval_df)
+cv_metrics.to_excel('final_CH4_cv_metrics.xlsx')
+model_eval_df.to_excel('final_CH4_eval_metrics.xlsx')
+
+import joblib
+filename='xgb_final_CH4_2024.joblib'
+joblib.dump(xgb_final_gas,filename)
