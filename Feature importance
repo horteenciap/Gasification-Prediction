@@ -1,0 +1,107 @@
+
+
+Conversas
+
+ 
+Regulamentos do programa
+Powered by Google
+Última atividade da conta: há 0 minuto
+Aberta em um outro local · Detalhes
+import pandas as pd
+import numpy as np
+import sklearn
+
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import Lasso
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import scale
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold, GridSearchCV, StratifiedKFold
+import xgboost as xgb
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import GridSearchCV
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.compose import ColumnTransformer
+import optuna
+import catboost as cb
+dataset= pd.read_excel("C:/Users/horte/Desktop/Dissertação/model_data.xlsx",sheet_name="all" )
+pd.set_option("display.precision", 2)
+pd.set_option("display.max_rows", 10)
+pd.set_option("display.max_columns", 26)
+
+data_cat_feat=dataset.loc[:,[ 'bed', 'reactor', 'agent']]
+data_num_feat=dataset.loc[:,['Cel', 'Hem', 'Lig',  'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+data_target=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+X=dataset.loc[:,['bed', 'reactor', 'agent', 'Cel', 'Hem', 'Lig', 'MC', 'Ash', 'PS', 'Temp','ER', 'SB']]
+y=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+#y=dataset.loc[:,['Gas_yield','CO', 'CO2', 'H2', 'CH4', 'CnHn', 'LHV', 'CCE','CGE']]
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X,y,
+                                                    test_size =0.2,
+                                                    random_state=123,
+                                                    shuffle=True )
+
+#numeric_features
+numerical_transformer=MinMaxScaler()
+
+#categoric_features
+categoric_transformer=OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+
+#scaling_encoding
+preprocessor = ColumnTransformer(transformers=
+                                [('cat', categoric_transformer, data_cat_feat.columns),
+                                ("num", numerical_transformer,data_num_feat.columns)],
+                                remainder='drop',
+                                n_jobs=-1)
+X_train=pd.DataFrame(preprocessor.fit_transform(X_train),  columns=preprocessor.get_feature_names_out())
+X_train.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_train.columns=X_train.columns.str.replace('num__','', regex=True)
+
+X_test=pd.DataFrame(preprocessor.transform(X_test),  columns=preprocessor.get_feature_names_out())
+X_test.columns=X_train.columns.str.replace('cat__','', regex=True)
+X_test.columns=X_train.columns.str.replace('num__','', regex=True)
+
+
+
+
+import joblib
+#joblib.load('xgb_final_CH4_2024.joblib')
+#modelco=joblib.load('xgb_final_CO_2024.joblib')
+#joblib.load('xgb_final_CO2_2024.joblib')
+#joblib.load('xgb_final_gas_yield_2024.joblib')
+#modelh2=joblib.load('xgb_final_H2_2024.joblib')
+#joblib.load('xgb_final_LHV_2024.joblib')
+
+#models=[
+#joblib.load('xgb_final_CO_2024.joblib'),
+#joblib.load('xgb_final_H2_2024.joblib')
+#]
+#y_predco = np.array(modelco.predict(X_test))
+#y_predh2 = np.array(modelh2.predict(X_test))
+
+print (X_test)
+
+import shap
+import pandas as pd
+import numpy as np
+
+
+#for model in models:
+#    explainer = shap.TreeExplainer(model)
+#   shap_values = explainer.shap_values(X_test)
+#    shap.summary_plot(shap_values, X_test)
+#    shap_values =   explainer(X_test)
+#  shap.plots.bar(shap_values)
